@@ -858,19 +858,36 @@ def live_acb(games):
         tot = [r for r in srows if r and r[0] == "Totales"][:2]
         if len(tot) < 2:
             continue
-        qrows = cells_of(safe(get, base + "/resumen", 2) or "")
+        page = safe(get, base + "/resumen", 2) or ""
+        # Dane wbudowane w stronę: status, bieżąca kwarta, czas do końca kwarty i punkty w kwartach.
+        # Tabela kwart bywa w trakcie meczu niedostępna, a bez numeru kwarty model źle liczy pozostały czas.
+        pj = page.replace('\\"', '"')
+        info = re.search(r'"status":"(\w+)","isOnHalfTime":(\w+),"currentQuarter":(\d+),.*?"timeLeft":"([^"]*)"', pj)
+        qsj = re.search(r'"quarterScores":(\[[^\]]*\])', pj)
+        qsj = safe(json.loads, qsj.group(1)) if qsj else None
+        qrows = cells_of(page)
         qi = next((i for i, r in enumerate(qrows) if r[:2] == ["Equipo", "1C"]), None)
-        if len(tot) < 2 or qi is None:
-            continue
         sides = []
         for i, r in enumerate(tot):
             sp = lambda c: [int(x) for x in r[c].split("/")]
             f2, f3, ft = sp(3), sp(5), sp(7)
-            q = [int(x) for x in qrows[qi + 1 + i][1:] if x.isdigit()]
+            if qsj:
+                q = [int(x.get("home" if i == 0 else "away") or 0) for x in sorted(qsj, key=lambda x: x.get("quarter", 0))]
+            elif qi is not None:
+                q = [int(x) for x in qrows[qi + 1 + i][1:] if x.isdigit()]
+            else:
+                q = [int(r[2])]
             sides.append(stat(int(r[2]), q, f2[0], f2[1], f3[0], f3[1], ft[0], ft[1], int(r[9]), int(r[13])))
         start = datetime.fromisoformat(g["d"].replace("Z", "+00:00"))
-        done = start <= NOW - timedelta(hours=2, minutes=30)   # strona nie podaje końca meczu wprost
-        out[g["id"]] = dict(g, st="F" if done else "L", per=trim_future(sides), clk=None, hs=sides[0], **{"as": sides[1]})
+        if info:
+            done = info.group(1) in ("FINALIZED", "FINISHED", "ENDED", "CLOSED")
+            per, clk = int(info.group(3)), (info.group(4) or None)
+            for s in sides:
+                s["q"] = (s["q"] + [0] * per)[:max(per, len(s["q"]))]
+        else:
+            done = start <= NOW - timedelta(hours=2, minutes=30)   # bez danych wbudowanych: koniec po 2,5 h
+            per, clk = trim_future(sides), None
+        out[g["id"]] = dict(g, st="F" if done else "L", per=per, clk=None if done else clk, hs=sides[0], **{"as": sides[1]})
         add_players(out[g["id"]], safe(pl_acb, srows))
     return out
 
