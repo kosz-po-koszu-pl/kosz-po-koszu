@@ -134,7 +134,13 @@ def commit(msg):
 
 
 def head(sha, running, leagues):
-    print("HEAD " + json.dumps({"sha": sha, "at": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"), "running": running, "leagues": leagues}))
+    """Znacznik dla aplikacji: commit, czas, stan odświeżania na żywo i skróty plików (telefon pobiera tylko zmienione)."""
+    files = {}
+    for f in sorted(os.listdir(DATA)):
+        if f.endswith(".json"):
+            files[f[:-5]] = sh("git", "rev-parse", f"{sha}:data/{f}", check=False)[:8]
+    print("HEAD " + json.dumps({"sha": sha, "at": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"), "running": running,
+                                "leagues": leagues, "f": files}, separators=(",", ":")))
 
 
 def main():
