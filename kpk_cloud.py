@@ -145,26 +145,59 @@ def head(sha, running, leagues):
                                 "leagues": leagues, "f": files}, separators=(",", ":")))
 
 
+DOC = {"params": ("model", "params"), "health": ("status", "daily")}
+
+
+def to_db(start, sha):
+    """Pliki zmienione od początku tego uruchomienia, do wgrania do bazy aplikacji (telefon czyta tylko bazę):
+    linie "ZAPISZ <kolekcja> <dokument> <pełna ścieżka pliku>"."""
+    names = sh("git", "diff", "--name-only", start, sha, "--", "data", check=False).splitlines() if start != sha else []
+    for n in names:
+        path = os.path.join(BASE, *n.split("/"))
+        if not n.endswith(".json") or not os.path.exists(path):
+            continue
+        parts = n.split("/")
+        if parts[1] == "archive":
+            print(f"ZAPISZ archive {parts[2][:-5]} {path}")
+        else:
+            col, doc = DOC.get(parts[1][:-5], ("leagues", parts[1][:-5]))
+            print(f"ZAPISZ {col} {doc} {path}")
+
+
 def main():
     mode, rest = sys.argv[1], sys.argv[2:]
+    start = sh("git", "rev-parse", "HEAD")
+    if mode == "sync":                       # wszystkie pliki do bazy (po przerwie albo zmianie sposobu zapisu)
+        for f in sorted(os.listdir(DATA)):
+            if f.endswith(".json"):
+                col, doc = DOC.get(f[:-5], ("leagues", f[:-5]))
+                print(f"ZAPISZ {col} {doc} {os.path.join(DATA, f)}")
+        return
     if mode == "daily":
         out = fetch([], 1500)
         problems = guard(out)
         health(problems)
         tune()
-        head(commit(f"Dane dzienne {NOW:%Y-%m-%d}"), False, [])
+        sha = commit(f"Dane dzienne {NOW:%Y-%m-%d}")
+        to_db(start, sha)
+        head(sha, False, [])
     elif mode == "nba":
         guard(fetch(["NBA"], 900))
-        head(commit(f"NBA wieczorem {NOW:%Y-%m-%d %H:%M}"), False, [])
+        sha = commit(f"NBA wieczorem {NOW:%Y-%m-%d %H:%M}")
+        to_db(start, sha)
+        head(sha, False, [])
     elif mode == "due":
         out = fetch(["--due"], 900)
         if "BRAK" not in out:
             guard(out)
-        head(commit(f"Wyniki {NOW:%Y-%m-%d %H:%M}"), False, [])
+        sha = commit(f"Wyniki {NOW:%Y-%m-%d %H:%M}")
+        to_db(start, sha)
+        head(sha, False, [])
     elif mode == "live":
         out = fetch(rest + ["--live"], 300)
         end = any(l.startswith("KONIEC") for l in out.splitlines())
         sha = commit(f"Na żywo {NOW:%H:%M} {' '.join(rest)}")
+        to_db(start, sha)
         if end:
             print("KONIEC")
         head(sha, not end, rest)
