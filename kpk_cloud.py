@@ -123,6 +123,8 @@ def commit(msg):
     if sh("git", "status", "--porcelain", "data", check=False):
         sh("git", "commit", "-q", "-m", msg)
     branch = sh("git", "rev-parse", "--abbrev-ref", "HEAD")
+    if branch in ("HEAD", ""):          # zadania w chmurze pobierają repozytorium bez nazwy gałęzi
+        branch = "main"
     for i in range(3):
         p = subprocess.run(["git", "push", "-q", "origin", f"HEAD:{branch}"], cwd=BASE, capture_output=True, text=True)
         if p.returncode == 0:
